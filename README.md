@@ -4,15 +4,15 @@ A [Homebrew](https://brew.sh) tap that installs [Verus](https://github.com/verus
 the tool for verifying the correctness of code written in Rust.
 
 > **Repo name matters.** Homebrew taps must live in a repo named `homebrew-<name>`. Push
-> this to `github.com/<you>/homebrew-verus` so that `brew tap <you>/verus` resolves.
+> this to `github.com/yipjunkai/homebrew-verus` so that `brew tap yipjunkai/verus` resolves.
 
 ## Install
 
 ```sh
-brew install <you>/verus/verus
+brew install yipjunkai/verus/verus
 ```
 
-(or `brew tap <you>/verus` then `brew install verus`)
+(or `brew tap yipjunkai/verus` then `brew install verus`)
 
 ### One required follow-up: the Rust toolchain
 
