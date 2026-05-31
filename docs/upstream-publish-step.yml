@@ -32,20 +32,31 @@
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
       - name: Regenerate the formula from this release
+        # The tag is passed via env, NOT interpolated into the run: script body — a release
+        # tag is attacker-influenceable, and inlining ${{ ... }} into a shell script is the
+        # classic GitHub Actions script-injection sink. As env it stays inert data, and the
+        # allowlist below rejects anything that isn't a stable release tag before it reaches
+        # git/curl/sed. Works whether triggered by `on: release` or `on: push: tags:`.
+        # The generator downloads the just-published assets to hash them; to skip that
+        # download, pass a second arg pointing at the build output dir holding the zips.
         env:
           GH_TOKEN: ${{ github.token }}
-        # The tag drives both the version and the asset URLs. Works whether the
-        # workflow is triggered by `on: release` or by `on: push: tags:`.
-        # The generator downloads the just-published assets to hash them; to skip
-        # that download, pass a second arg pointing at the local build output dir
-        # that already holds the verus-*-*.zip files.
+          TAG: ${{ github.event.release.tag_name || github.ref_name }}
         run: |
-          TAG="${{ github.event.release.tag_name || github.ref_name }}"
+          if ! printf '%s\n' "$TAG" | grep -Eq '^release/[0-9]+(\.[0-9]+)+\.[0-9a-f]+$'; then
+            echo "Unexpected tag '$TAG'; refusing to publish." >&2
+            exit 1
+          fi
           bash scripts/generate-formula.sh "$TAG" > Formula/verus.rb
 
       - name: Commit & push
+        env:
+          TAG: ${{ github.event.release.tag_name || github.ref_name }}
         run: |
-          TAG="${{ github.event.release.tag_name || github.ref_name }}"
+          if ! printf '%s\n' "$TAG" | grep -Eq '^release/[0-9]+(\.[0-9]+)+\.[0-9a-f]+$'; then
+            echo "Unexpected tag '$TAG'; refusing to publish." >&2
+            exit 1
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "verus ${TAG#release/}" || { echo "Formula unchanged"; exit 0; }

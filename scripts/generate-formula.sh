@@ -26,6 +26,15 @@ TAG="${1:?usage: generate-formula.sh <tag-or-version> [artifact-dir]}"
 ARTIFACT_DIR="${2:-}"
 VERSION="${TAG#release/}"   # strip the "release/" tag prefix if present
 
+# Defense-in-depth: refuse any tag that is not a stable Verus release version (date-based
+# with a trailing commit hash, e.g. 0.2026.05.24.ecee80a). This stops a hostile or malformed
+# ref from flowing into the curl/sed below if the script is ever invoked straight from a
+# release workflow with an untrusted ref. It also rejects rolling/* tags, which we don't track.
+if ! printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+(\.[0-9]+)+\.[0-9a-f]+$'; then
+  echo "FATAL: refusing unexpected version '$VERSION' (from tag '$TAG')" >&2
+  exit 1
+fi
+
 # Asset arch/os tokens that map to Homebrew platform branches.
 PLATFORMS="arm64-macos x86-macos x86-linux"
 
@@ -42,25 +51,32 @@ url_for() {  # <token> -> download URL
     "$REPO" "$VERSION" "$VERSION" "$1"
 }
 
-sha_for() {  # <token> -> sha256, from a local artifact if available, else downloaded
+sha_for() {  # <token> -> sha256, from a local artifact if available, else downloaded.
+             # Returns non-zero (so the caller can abort) if the asset is missing or empty,
+             # rather than silently hashing a 0-byte file into the empty-input digest.
   local token="$1" file tmp
   file="verus-${VERSION}-${token}.zip"
   if [ -n "$ARTIFACT_DIR" ] && [ -f "$ARTIFACT_DIR/$file" ]; then
+    [ -s "$ARTIFACT_DIR/$file" ] || return 1
     sha256_of "$ARTIFACT_DIR/$file"
   else
     tmp="$(mktemp)"
-    curl -fsSL "$(url_for "$token")" -o "$tmp"
+    if ! curl -fsSL "$(url_for "$token")" -o "$tmp"; then rm -f "$tmp"; return 1; fi
+    [ -s "$tmp" ] || { rm -f "$tmp"; return 1; }
     sha256_of "$tmp"
     rm -f "$tmp"
   fi
 }
 
-# Fail loudly if any expected target is missing for this release. When wired into the
-# upstream release workflow this runs AFTER the release is published, so a failure here
-# shows a red check to investigate without ever rolling back or blocking the release.
-SHA_ARM_MAC="$(sha_for arm64-macos)"
-SHA_X86_MAC="$(sha_for x86-macos)"
-SHA_X86_LINUX="$(sha_for x86-linux)"
+# Fail loudly if any expected target is missing/empty for this release. The `|| { … exit 1; }`
+# runs in the top-level shell — unlike a bare `exit` inside the command substitution, which
+# would only kill the subshell — so a 404 or truncated asset aborts here instead of emitting
+# the empty-file hash. When wired into the upstream release workflow this runs AFTER the
+# release is published, so a failure is just a red check to investigate; it never rolls back
+# or blocks the release.
+SHA_ARM_MAC="$(sha_for arm64-macos)"  || { echo "FATAL: missing/empty asset verus-${VERSION}-arm64-macos.zip" >&2; exit 1; }
+SHA_X86_MAC="$(sha_for x86-macos)"    || { echo "FATAL: missing/empty asset verus-${VERSION}-x86-macos.zip" >&2; exit 1; }
+SHA_X86_LINUX="$(sha_for x86-linux)"  || { echo "FATAL: missing/empty asset verus-${VERSION}-x86-linux.zip" >&2; exit 1; }
 
 # Quoted heredoc: the Ruby below is emitted verbatim (no shell interpolation, so
 # Ruby's own #{...} and the livecheck regex survive intact). Data is substituted by
@@ -133,9 +149,11 @@ class Verus < Formula
     # The right version landed and stayed addressable from libexec.
     assert_equal version.to_s, (libexec/"version.txt").read.strip
 
-    # With no matching toolchain installed, the relocated launcher finds its own
-    # bundled metadata, reports which toolchain it needs, and exits non-zero.
-    output = shell_output("#{bin}/verus --version 2>&1", 1)
+    # With no matching toolchain installed (the case on a clean CI runner), the relocated
+    # launcher finds its bundled metadata and reports which toolchain it needs. `|| true`
+    # keeps the assertion independent of the exact exit code, which on this path is passed
+    # through from rustup rather than chosen by verus.
+    output = shell_output("#{bin}/verus --version 2>&1 || true")
     assert_match "toolchain", output
   end
 end

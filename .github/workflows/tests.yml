@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, macos-13, ubuntu-latest] # arm64 macOS, Intel macOS, x86_64 Linux
+        os: [macos-14, macos-15-intel, ubuntu-latest] # arm64 macOS, Intel macOS, x86_64 Linux
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out tap
@@ -48,6 +48,9 @@ jobs:
 
       - name: Install + test + uninstall
         run: |
-          brew install --formula "${{ steps.tap.outputs.name }}"
-          brew test --formula "${{ steps.tap.outputs.name }}"
-          brew uninstall --formula "${{ steps.tap.outputs.name }}"
+          # --formula is intentionally omitted: `brew test` does not accept it (only
+          # install/uninstall do), and the fully-qualified tap name needs no cask
+          # disambiguation. Keep all three consistent so the test line is not "fixed" back.
+          brew install "${{ steps.tap.outputs.name }}"
+          brew test "${{ steps.tap.outputs.name }}"
+          brew uninstall "${{ steps.tap.outputs.name }}"

@@ -4,8 +4,13 @@ name: bump formula
 # docs/UPSTREAM_PROPOSAL.md for the preferred release-integrated approach). This watches
 # verus-lang/verus from the outside: once a day it checks the latest *stable* release and,
 # if it is newer than what the formula pins, regenerates Formula/verus.rb and opens a PR.
-# CI (tests.yml) then validates the PR; enable auto-merge on the repo for fully hands-off
-# updates. Reactive by nature, so it can lag a release or need a touch if asset names drift.
+#
+# Note: a PR opened with the default GITHUB_TOKEN does NOT trigger other workflows, so
+# tests.yml will not run on this bot PR automatically. Review it, then kick CI manually
+# (re-run tests.yml via workflow_dispatch on the bump branch, or push an empty commit from a
+# real account). For fully hands-off updates, give checkout + gh a fine-grained PAT (as
+# docs/upstream-publish-step.yml does) so the PR triggers CI, then enable auto-merge.
+# Reactive by nature: it can lag a release or need a touch if asset names drift.
 
 on:
   schedule:
@@ -29,38 +34,54 @@ jobs:
         run: |
           # /releases/latest excludes prereleases, so the rolling channel is ignored.
           tag="$(gh api repos/verus-lang/verus/releases/latest --jq .tag_name)"
+          # Validate before trusting: a release tag is attacker-influenceable input that
+          # flows into later shell/git/gh/sed commands. Accept only the stable shape.
+          if ! printf '%s\n' "$tag" | grep -Eq '^release/[0-9]+(\.[0-9]+)+\.[0-9a-f]+$'; then
+            echo "Unexpected tag '$tag'; refusing to proceed." >&2
+            exit 1
+          fi
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "version=${tag#release/}" >> "$GITHUB_OUTPUT"
 
       - name: Regenerate formula if the version changed
         id: gen
+        # Step outputs passed via env, not interpolated into the run: body (the tag was
+        # already format-validated above; this also keeps the script free of ${{ }} sinks).
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.rel.outputs.tag }}
+          NEW: ${{ steps.rel.outputs.version }}
         run: |
-          new="${{ steps.rel.outputs.version }}"
           # Current version is encoded in the macOS arm64 asset URL.
           cur="$(grep -oE 'verus-[0-9][^"/]*-arm64-macos\.zip' Formula/verus.rb | head -1 \
                  | sed -E 's/^verus-(.*)-arm64-macos\.zip$/\1/')"
-          if [ "$cur" = "$new" ]; then
-            echo "Formula already at ${new}; nothing to do."
+          if [ "$cur" = "$NEW" ]; then
+            echo "Formula already at ${NEW}; nothing to do."
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "Bumping ${cur:-<none>} -> ${new}"
-          bash scripts/generate-formula.sh "${{ steps.rel.outputs.tag }}" > Formula/verus.rb
+          echo "Bumping ${cur:-<none>} -> ${NEW}"
+          bash scripts/generate-formula.sh "$TAG" > Formula/verus.rb
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Open bump PR
         if: steps.gen.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.rel.outputs.version }}
         run: |
-          version="${{ steps.rel.outputs.version }}"
+          branch="bump-${VERSION}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "bump-${version}"
-          git commit -am "verus ${version}"
-          git push -u origin "bump-${version}"
-          gh pr create --fill \
-            --title "verus ${version}" \
-            --body "Automated bump to [verus ${version}](https://github.com/verus-lang/verus/releases/tag/release/${version})."
+          git switch -C "$branch"
+          git commit -am "verus ${VERSION}"
+          # Idempotent if re-triggered while a same-version PR is already open: refresh the
+          # branch and only open a PR when one is not already present for this head.
+          git push -u origin "$branch" --force-with-lease
+          if [ -z "$(gh pr list --head "$branch" --state open --json number --jq '.[0].number')" ]; then
+            gh pr create --fill \
+              --title "verus ${VERSION}" \
+              --body "Automated bump to [verus ${VERSION}](https://github.com/verus-lang/verus/releases/tag/release/${VERSION})."
+          else
+            echo "A PR for ${branch} is already open; refreshed the branch."
+          fi

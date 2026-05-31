@@ -102,12 +102,15 @@ Two ways to keep it current, in order of preference:
    [`docs/upstream-publish-step.yml`](docs/upstream-publish-step.yml); the pitch is in
    [`docs/UPSTREAM_PROPOSAL.md`](docs/UPSTREAM_PROPOSAL.md).
 2. **Scheduled fallback (this repo).** [`.github/workflows/bump-formula.yml`](.github/workflows/bump-formula.yml)
-   checks daily for a newer stable release and opens a bump PR; CI validates it. Enable
-   auto-merge for hands-off updates. Used only if upstream declines to own step 1.
+   checks daily for a newer stable release and opens a bump PR. A PR opened by the default
+   `GITHUB_TOKEN` does **not** trigger `tests.yml`, so kick CI on the bump branch manually
+   (or give the workflow a fine-grained PAT so CI runs, then enable auto-merge). Used only if
+   upstream declines to own step 1.
 
-The committed formula is dogfooded output of the generator, validated in CI
-([`.github/workflows/tests.yml`](.github/workflows/tests.yml)) by a real
-install + test + audit on arm64 macOS, Intel macOS, and x86_64 Linux.
+The committed formula is generator output. CI
+([`.github/workflows/tests.yml`](.github/workflows/tests.yml)) is configured to run a real
+install + test + audit across arm64 macOS, Intel macOS, and x86_64 Linux on every push and
+PR; to date that cycle has been validated by hand on arm64 macOS only (see Validation status).
 
 ## Validation status
 
