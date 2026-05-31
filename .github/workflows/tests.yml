@@ -1,0 +1,53 @@
+name: tests
+
+# Validates the formula the same way it was validated by hand: style, an online
+# strict audit, and a real install + test + uninstall on every platform the formula
+# targets — arm64 macOS, Intel macOS, and x86_64 Linux. The test runs without the
+# Verus rustup toolchain (the launcher self-reports it), so CI stays fast and green.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-13, ubuntu-latest] # arm64 macOS, Intel macOS, x86_64 Linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out tap
+        uses: actions/checkout@v4
+        with:
+          path: tap
+
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@master
+
+      - name: Register the local checkout as a tap
+        id: tap
+        run: |
+          owner="$(echo "${GITHUB_REPOSITORY%%/*}" | tr '[:upper:]' '[:lower:]')"
+          dest="$(brew --repository)/Library/Taps/${owner}/homebrew-verus"
+          mkdir -p "$(dirname "$dest")"
+          ln -s "${GITHUB_WORKSPACE}/tap" "$dest"
+          echo "name=${owner}/verus/verus" >> "$GITHUB_OUTPUT"
+
+      - name: Style + strict online audit
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
+        run: |
+          brew style "${{ steps.tap.outputs.name }}"
+          brew audit --strict --online "${{ steps.tap.outputs.name }}"
+
+      - name: Install + test + uninstall
+        run: |
+          brew install --formula "${{ steps.tap.outputs.name }}"
+          brew test --formula "${{ steps.tap.outputs.name }}"
+          brew uninstall --formula "${{ steps.tap.outputs.name }}"

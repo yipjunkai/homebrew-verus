@@ -1,0 +1,66 @@
+name: bump formula
+
+# FALLBACK automation, used only if upstream does NOT own the publish step (see
+# docs/UPSTREAM_PROPOSAL.md for the preferred release-integrated approach). This watches
+# verus-lang/verus from the outside: once a day it checks the latest *stable* release and,
+# if it is newer than what the formula pins, regenerates Formula/verus.rb and opens a PR.
+# CI (tests.yml) then validates the PR; enable auto-merge on the repo for fully hands-off
+# updates. Reactive by nature, so it can lag a release or need a touch if asset names drift.
+
+on:
+  schedule:
+    - cron: "17 8 * * *" # daily, 08:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve latest stable Verus release
+        id: rel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # /releases/latest excludes prereleases, so the rolling channel is ignored.
+          tag="$(gh api repos/verus-lang/verus/releases/latest --jq .tag_name)"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#release/}" >> "$GITHUB_OUTPUT"
+
+      - name: Regenerate formula if the version changed
+        id: gen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          new="${{ steps.rel.outputs.version }}"
+          # Current version is encoded in the macOS arm64 asset URL.
+          cur="$(grep -oE 'verus-[0-9][^"/]*-arm64-macos\.zip' Formula/verus.rb | head -1 \
+                 | sed -E 's/^verus-(.*)-arm64-macos\.zip$/\1/')"
+          if [ "$cur" = "$new" ]; then
+            echo "Formula already at ${new}; nothing to do."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Bumping ${cur:-<none>} -> ${new}"
+          bash scripts/generate-formula.sh "${{ steps.rel.outputs.tag }}" > Formula/verus.rb
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open bump PR
+        if: steps.gen.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ steps.rel.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "bump-${version}"
+          git commit -am "verus ${version}"
+          git push -u origin "bump-${version}"
+          gh pr create --fill \
+            --title "verus ${version}" \
+            --body "Automated bump to [verus ${version}](https://github.com/verus-lang/verus/releases/tag/release/${version})."

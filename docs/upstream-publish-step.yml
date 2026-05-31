@@ -1,0 +1,52 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# PROPOSED addition to verus-lang/verus's release workflow.
+#
+# This is the "do it once" lever. Add this single job to whatever workflow publishes
+# a Verus release (the one that builds and uploads the verus-<ver>-<arch>-<os>.zip
+# assets). From then on, a working Homebrew formula is a free side-effect of every
+# release you already cut — no formula maintenance, no second repo to remember, no
+# polling. The job regenerates the tap's formula from the exact artifacts this release
+# just produced and pushes it.
+#
+# Safety: it runs AFTER the release is published (needs: <release-job>), so it can
+# never block, delay, or roll back a release. If it ever fails (e.g. a new asset name),
+# it is just a red check on an already-published release — visible, not destructive.
+#
+# One-time setup:
+#   1. Create the tap repo  verus-lang/homebrew-verus  (contains Formula/verus.rb and
+#      scripts/generate-formula.sh — copy them from this repo).
+#   2. Add a repo/org secret  HOMEBREW_TAP_TOKEN  = a fine-grained PAT or GitHub App
+#      token with  contents: write  on  verus-lang/homebrew-verus.
+#   3. Set  needs:  below to the name of your release/build job.
+# ─────────────────────────────────────────────────────────────────────────────
+
+  publish-homebrew:
+    name: Publish Homebrew formula
+    needs: [release] # <-- rename to the job that uploads the release .zip assets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: verus-lang/homebrew-verus
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Regenerate the formula from this release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # The tag drives both the version and the asset URLs. Works whether the
+        # workflow is triggered by `on: release` or by `on: push: tags:`.
+        # The generator downloads the just-published assets to hash them; to skip
+        # that download, pass a second arg pointing at the local build output dir
+        # that already holds the verus-*-*.zip files.
+        run: |
+          TAG="${{ github.event.release.tag_name || github.ref_name }}"
+          bash scripts/generate-formula.sh "$TAG" > Formula/verus.rb
+
+      - name: Commit & push
+        run: |
+          TAG="${{ github.event.release.tag_name || github.ref_name }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "verus ${TAG#release/}" || { echo "Formula unchanged"; exit 0; }
+          git push
