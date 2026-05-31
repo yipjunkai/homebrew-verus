@@ -16,9 +16,11 @@
 # changes per release is data (version + per-platform sha256), and that data is
 # produced here, from the exact artifacts, with no human in the loop.
 #
-# Add a new platform target (e.g. arm64-linux) by adding it to PLATFORMS below and
-# adding the matching url/sha256 pair to the template. That is the only manual touch
-# a new target requires.
+# Add a new platform target (e.g. arm64-linux) by: (1) adding a
+# SHA_<T>="$(sha_for <token>)" line to the asset-hashing block below, (2) adding the
+# matching url/sha256 branch to the Ruby template, and (3) adding the two
+# @@URL_<T>@@ / @@SHA_<T>@@ substitutions to the final sed pass. Those are the only
+# manual touches a new target requires.
 set -euo pipefail
 
 REPO="verus-lang/verus"
@@ -34,9 +36,6 @@ if ! printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+(\.[0-9]+)+\.[0-9a-f]+$'; then
   echo "FATAL: refusing unexpected version '$VERSION' (from tag '$TAG')" >&2
   exit 1
 fi
-
-# Asset arch/os tokens that map to Homebrew platform branches.
-PLATFORMS="arm64-macos x86-macos x86-linux"
 
 sha256_of() {  # <path> -> hex digest
   if command -v sha256sum >/dev/null 2>&1; then
