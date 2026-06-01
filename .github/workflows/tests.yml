@@ -2,7 +2,7 @@ name: tests
 
 # Validates the formula the same way it was validated by hand: style, an online
 # strict audit, and a real install + test + uninstall on every platform the formula
-# targets — arm64 macOS, Intel macOS, and x86_64 Linux. The test runs without the
+# targets: arm64 macOS, Intel macOS, and x86_64 Linux. The test runs without the
 # Verus rustup toolchain (the launcher self-reports it), so CI stays fast and green.
 
 on:
@@ -23,12 +23,16 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           path: tap
 
       - name: Set up Homebrew
-        uses: Homebrew/actions/setup-homebrew@master
+        # Pinned to a commit SHA, not @master: an unpinned ref is a moving target that can
+        # change between runs of an unchanged formula and is the classic supply-chain vector.
+        # setup-homebrew ships no semver tags, so this tracks Homebrew/actions master as of
+        # 2026-05-29; Dependabot bumps it on a schedule (.github/dependabot.yml).
+        uses: Homebrew/actions/setup-homebrew@521d40582eb7b2dc6c83001c590c455100248f27 # master@2026-05-29
 
       - name: Register the local checkout as a tap
         id: tap
@@ -54,3 +58,23 @@ jobs:
           brew install "${{ steps.tap.outputs.name }}"
           brew test "${{ steps.tap.outputs.name }}"
           brew uninstall "${{ steps.tap.outputs.name }}"
+
+  ci-passed:
+    # One stable check for branch protection to require, instead of naming each matrix leg
+    # (test (macos-14), test (macos-15-intel), ...); those names change whenever the matrix is
+    # edited, silently dropping the required check. This job needs the whole matrix and, via
+    # `if: always()`, runs even when a leg fails so it can turn that into a single red/green.
+    name: ci-passed
+    if: ${{ always() }}
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate matrix result
+        env:
+          RESULT: ${{ needs.test.result }}
+        run: |
+          echo "test matrix result: ${RESULT}"
+          if [ "${RESULT}" != "success" ]; then
+            echo "::error::The test matrix did not succeed (result: ${RESULT})."
+            exit 1
+          fi

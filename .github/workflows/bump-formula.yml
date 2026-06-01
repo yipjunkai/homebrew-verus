@@ -74,7 +74,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -C "$branch"
-          git commit -am "verus ${VERSION}"
+          # The gen step only sets changed=true after the formula content actually moved, so a
+          # commit normally has something to record. Guard anyway: if a re-trigger lands on an
+          # identical tree, `commit` would exit non-zero and (under set -e) fail the job for a
+          # no-op, so treat "nothing to commit" as success and stop. Matches the guard in
+          # docs/upstream-publish-step.yml.
+          git commit -am "verus ${VERSION}" || { echo "Formula unchanged; nothing to push."; exit 0; }
           # Idempotent if re-triggered while a same-version PR is already open: refresh the
           # branch and only open a PR when one is not already present for this head.
           git push -u origin "$branch" --force-with-lease

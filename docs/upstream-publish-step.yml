@@ -3,18 +3,18 @@
 #
 # This is the "do it once" lever. Add this single job to whatever workflow publishes
 # a Verus release (the one that builds and uploads the verus-<ver>-<arch>-<os>.zip
-# assets). From then on, a working Homebrew formula is a free side-effect of every
-# release you already cut — no formula maintenance, no second repo to remember, no
+# assets). From then on, a working Homebrew formula ships with every
+# release you already cut: no formula maintenance, no second repo to remember, no
 # polling. The job regenerates the tap's formula from the exact artifacts this release
 # just produced and pushes it.
 #
 # Safety: it runs AFTER the release is published (needs: <release-job>), so it can
 # never block, delay, or roll back a release. If it ever fails (e.g. a new asset name),
-# it is just a red check on an already-published release — visible, not destructive.
+# it is just a red check on an already-published release: visible, not destructive.
 #
 # One-time setup:
 #   1. Create the tap repo  verus-lang/homebrew-verus  (contains Formula/verus.rb and
-#      scripts/generate-formula.sh — copy them from this repo).
+#      scripts/generate-formula.sh, copy them from this repo).
 #   2. Add a repo/org secret  HOMEBREW_TAP_TOKEN  = a fine-grained PAT or GitHub App
 #      token with  contents: write  on  verus-lang/homebrew-verus.
 #   3. Set  needs:  below to the name of your release/build job.
@@ -32,7 +32,7 @@
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
       - name: Regenerate the formula from this release
-        # The tag is passed via env, NOT interpolated into the run: script body — a release
+        # The tag is passed via env, NOT interpolated into the run: script body, since a release
         # tag is attacker-influenceable, and inlining ${{ ... }} into a shell script is the
         # classic GitHub Actions script-injection sink. As env it stays inert data, and the
         # allowlist below rejects anything that isn't a stable release tag before it reaches

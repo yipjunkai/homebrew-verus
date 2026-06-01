@@ -1,0 +1,21 @@
+version: 2
+
+# Keeps the SHA-pinned GitHub Actions in .github/workflows/ current. Pinning without this
+# just means the pins rot; this proposes weekly bumps (grouped to cut PR noise) that re-pin
+# to the newest SHA. github-actions is the only ecosystem here; a tap has no Cargo/pip tree;
+# its sole "dependency" is the upstream release zip, which is verified by sha256 in the formula.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions-minor:
+        update-types: [minor, patch]
+      actions-major:
+        update-types: [major]
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: scope
