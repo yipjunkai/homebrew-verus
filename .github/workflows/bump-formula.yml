@@ -5,11 +5,20 @@ name: bump formula
 # verus-lang/verus from the outside: once a day it checks the latest *stable* release and,
 # if it is newer than what the formula pins, regenerates Formula/verus.rb and opens a PR.
 #
-# Note: a PR opened with the default GITHUB_TOKEN does NOT trigger other workflows, so
-# tests.yml will not run on this bot PR automatically. Review it, then kick CI manually
-# (re-run tests.yml via workflow_dispatch on the bump branch, or push an empty commit from a
-# real account). For fully hands-off updates, give checkout + gh a fine-grained PAT (as
-# docs/upstream-publish-step.yml does) so the PR triggers CI, then enable auto-merge.
+# Authentication: the PR is pushed and opened with a GitHub App installation token, NOT the
+# default GITHUB_TOKEN. This is deliberate and required:
+#   1. A PR opened by GITHUB_TOKEN does NOT trigger other workflows (GitHub's anti-recursion
+#      rule), so tests.yml would never run on the bot PR, and main's branch protection
+#      requires the `ci-passed` check, so such a PR could never merge. An App token is not
+#      the default token, so its PR DOES trigger tests.yml.
+#   2. An App is owned by the repo/org, not a person, so the automation survives a maintainer
+#      handoff to verus-lang (see HANDOFF.md). A personal PAT would not.
+#
+# Required repo secrets (see HANDOFF.md for how to create them):
+#   TAP_APP_ID   the GitHub App's numeric App ID
+#   TAP_APP_KEY  the App's PEM private key
+# The App needs these repository permissions: Contents: write, Pull requests: write.
+#
 # Reactive by nature: it can lag a release or need a touch if asset names drift.
 
 on:
@@ -17,15 +26,31 @@ on:
     - cron: "17 8 * * *" # daily, 08:17 UTC
   workflow_dispatch:
 
+# Governs only the default GITHUB_TOKEN, used here just for public reads in the rel/gen steps.
+# All writes (push, PR create, auto-merge) use the App token, whose scope comes from the App
+# installation, not from this block.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   bump:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - name: Mint a GitHub App installation token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.TAP_APP_ID }}
+          private-key: ${{ secrets.TAP_APP_KEY }}
+
+      - name: Check out tap
+        # v6 SHA carried over from the Dependabot bump (#2) that landed on main; kept
+        # SHA-pinned rather than reverting to the @v6 tag that merge left here.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # Persist the App token as the checkout credential so the later `git push` is
+          # attributed to the App: that authorship is what makes the PR trigger tests.yml.
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Resolve latest stable Verus release
         id: rel
@@ -66,13 +91,22 @@ jobs:
 
       - name: Open bump PR
         if: steps.gen.outputs.changed == 'true'
+        # App token (not github.token): its authorship is what triggers tests.yml on the PR,
+        # so the required `ci-passed` check can run and the gate can be satisfied.
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           VERSION: ${{ steps.rel.outputs.version }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
         run: |
           branch="bump-${VERSION}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Attribute the commit to the App's own bot identity, derived from the token (no
+          # hardcoded name): "<app-slug>[bot]" with the matching noreply address built from
+          # the bot account's numeric id. Works regardless of what the App is named, so it
+          # survives the verus-lang handoff with no edit. The push itself is authorized by the
+          # App token persisted at checkout, which is what makes the PR trigger tests.yml.
+          bot_id="$(gh api "/users/${APP_SLUG}[bot]" --jq .id)"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
           git switch -C "$branch"
           # The gen step only sets changed=true after the formula content actually moved, so a
           # commit normally has something to record. Guard anyway: if a re-trigger lands on an
@@ -83,10 +117,17 @@ jobs:
           # Idempotent if re-triggered while a same-version PR is already open: refresh the
           # branch and only open a PR when one is not already present for this head.
           git push -u origin "$branch" --force-with-lease
-          if [ -z "$(gh pr list --head "$branch" --state open --json number --jq '.[0].number')" ]; then
-            gh pr create --fill \
+          pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number')"
+          if [ -z "$pr" ]; then
+            pr="$(gh pr create --fill \
               --title "verus ${VERSION}" \
-              --body "Automated bump to [verus ${VERSION}](https://github.com/verus-lang/verus/releases/tag/release/${VERSION})."
+              --body "Automated bump to [verus ${VERSION}](https://github.com/verus-lang/verus/releases/tag/release/${VERSION})." \
+              | grep -oE '[0-9]+$')"
           else
-            echo "A PR for ${branch} is already open; refreshed the branch."
+            echo "A PR for ${branch} is already open (#${pr}); refreshed the branch."
           fi
+          # Hands-off path: queue the PR to merge once tests.yml's `ci-passed` check goes green.
+          # Best-effort: if the repo's "Allow auto-merge" setting is off, this is a no-op and
+          # the PR is just left for manual merge. Never fail the job over it.
+          gh pr merge --auto --squash "$pr" \
+            || echo "Auto-merge not enabled; PR #${pr} left for manual review/merge."
