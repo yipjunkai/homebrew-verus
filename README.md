@@ -127,7 +127,7 @@ Two ways to keep it current, preferred first:
 The committed formula is generator output. CI
 ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)) runs a real install, test, and
 audit across arm64 macOS, Intel macOS, and x86_64 Linux on every push and PR, and currently
-passes on all three (see Validation status).
+passes on all three.
 
 ## 📄 License
 
