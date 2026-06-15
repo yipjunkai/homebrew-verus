@@ -16,19 +16,19 @@ class Verus < Formula
   # do not edit by hand.
   on_macos do
     on_arm do
-      url "https://github.com/verus-lang/verus/releases/download/release/0.2026.06.14.4ea7d0f/verus-0.2026.06.14.4ea7d0f-arm64-macos.zip"
-      sha256 "887030c67cd6a904f3e91420f2e32dd199a209e3eca00df913badeb3f13051f3"
+      url "https://github.com/verus-lang/verus/releases/download/release/0.2026.06.07.cd03505/verus-0.2026.06.07.cd03505-arm64-macos.zip"
+      sha256 "6d5d5d18cbd378fcf6c45a2277755fa7856e95cd215d9c82dcc92a167f6be1ba"
     end
     on_intel do
-      url "https://github.com/verus-lang/verus/releases/download/release/0.2026.06.14.4ea7d0f/verus-0.2026.06.14.4ea7d0f-x86-macos.zip"
-      sha256 "10030abec1aeb7a421176f73cd69054c4ab39cbfcb5abf514e43a976f16f7c8b"
+      url "https://github.com/verus-lang/verus/releases/download/release/0.2026.06.07.cd03505/verus-0.2026.06.07.cd03505-x86-macos.zip"
+      sha256 "d07df03a8989ec6764cec75430d543bd50ca8156564aaeaaaee69dd56561565e"
     end
   end
 
   on_linux do
     on_intel do
-      url "https://github.com/verus-lang/verus/releases/download/release/0.2026.06.14.4ea7d0f/verus-0.2026.06.14.4ea7d0f-x86-linux.zip"
-      sha256 "d3ffa786118813ee4a8c0dd4262370ad4b7869b8b2680bb0121fc5f4f9677800"
+      url "https://github.com/verus-lang/verus/releases/download/release/0.2026.06.07.cd03505/verus-0.2026.06.07.cd03505-x86-linux.zip"
+      sha256 "854e0fcf6b4020abbaaddded897ce0abd99cfaceef265986cf65ccea6cf0a57f"
     end
   end
 
