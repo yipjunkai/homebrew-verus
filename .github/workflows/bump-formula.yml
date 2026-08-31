@@ -46,7 +46,7 @@ jobs:
       - name: Check out tap
         # v6 SHA carried over from the Dependabot bump (#2) that landed on main; kept
         # SHA-pinned rather than reverting to the @v6 tag that merge left here.
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Persist the App token as the checkout credential so the later `git push` is
           # attributed to the App: that authorship is what makes the PR trigger tests.yml.
